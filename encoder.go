@@ -21,7 +21,7 @@ type yEncReader struct {
 	ctx          context.Context
 }
 
-func NewyEncReader(sourceString []byte, lineLength int) *yEncReader {
+func NewyEnc(sourceString []byte, lineLength int) *yEncReader {
 	return &yEncReader{
 		sourceString: sourceString,
 		sourceLength: len(sourceString),
@@ -30,11 +30,13 @@ func NewyEncReader(sourceString []byte, lineLength int) *yEncReader {
 	}
 }
 
+// TODO: implement file-reader returning yEnc instead of default bytes
+
 func yEncify(r byte) (byte, bool) {
 	escape := false
 	temp := int(r)
 
-	// Hex + 42d
+	// bin + 42d
 	temp += 42
 
 	// % 256d

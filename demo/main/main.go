@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	//	"io/ioutil"
 
 	"github.com/poldi1405/GoyEnc"
 )
@@ -10,14 +10,14 @@ import (
 func main() {
 	// asciiStr := "ABC"
 	//asciiBytes := []byte(asciiStr)
-	//reader := yenc.NewyEncReader([]byte("Hello world, I don't care for Datascience.\nABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz|\\/*-+&%$\"!?="), 128)
-	file, err := ioutil.ReadFile("spec.txt")
+	reader := yenc.NewyEnc([]byte("Hello world, I don't care for Datascience.\nABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz|\\/*-+&%$\"!?="), 128)
+	/*file, err := ioutil.ReadFile("spec.txt")
 	if err != nil {
 		panic(err)
 	}
 
-	reader := yenc.NewyEncReader(file, 128)
-	fmt.Println("File of length", len(file), "has been read")
+	reader := yenc.NewyEnc(file, 128)
+	fmt.Println("File of length", len(file), "has been read")*/
 
 	for {
 		res, err := reader.ReadLine()
