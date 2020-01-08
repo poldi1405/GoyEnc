@@ -2,27 +2,38 @@ package yenc
 
 import (
 	//"fmt"
+	"context"
+	"golang.org/x/sync/semaphore"
 	"io"
 )
 
+var (
+	sem = semaphore.NewWeighted(1)
+)
+
 type yEncReader struct {
-	sourceString string
-	currentIndex int
+	sourceString []byte
+	sourceLength int
+	currentLine  int
 	lineLength   int
 	lineIndex    int
+	currentIndex int
+	ctx          context.Context
 }
 
-func NewyEncReader(sourceString string, lineLength int) *yEncReader {
+func NewyEncReader(sourceString []byte, lineLength int) *yEncReader {
 	return &yEncReader{
 		sourceString: sourceString,
-		lineLength: lineLength - 1,
+		sourceLength: len(sourceString),
+		lineLength:   lineLength,
+		ctx:          context.TODO(),
 	}
 }
 
 func yEncify(r byte) (byte, bool) {
 	escape := false
 	temp := int(r)
-	
+
 	// Hex + 42d
 	temp += 42
 
@@ -33,7 +44,7 @@ func yEncify(r byte) (byte, bool) {
 	if temp == 0 || temp == 10 || temp == 13 || temp == 61 {
 		// + 64d
 		temp += 64
-		
+
 		// % 256d
 		temp &= 255
 		escape = true
@@ -42,35 +53,30 @@ func yEncify(r byte) (byte, bool) {
 	return byte(temp), escape
 }
 
-func (encoder *yEncReader) Read(p []byte) (int, bool, error) {
-	if encoder.currentIndex >= len(encoder.sourceString) {
-		return 0, true, io.EOF
+func (encoder *yEncReader) ReadLine() ([]byte, error) {
+	if err := sem.Acquire(encoder.ctx, 1); err != nil {
+		return nil, err
 	}
+	defer sem.Release(1)
 
-	x := len(encoder.sourceString) - encoder.currentIndex
-	n, bound := 0, 0
-	if x >= len(p) {
-		bound = len(p)
-	} else if x <= len(p) {
-		bound = x
-	}
+	var currentMapIndex int
+	resultMap := make([]byte, encoder.lineLength+1)
 
-	buf := make([]byte, bound*2)
-	for n < bound {
-		char, escape := yEncify(encoder.sourceString[encoder.currentIndex])
+	for currentMapIndex < encoder.lineLength {
+		if encoder.currentIndex == encoder.sourceLength {
+			return resultMap, io.EOF
+		}
+		resByte, escape := yEncify(encoder.sourceString[encoder.currentIndex])
+
 		if escape {
-			buf[n] = '='
-			n++
-			buf[n] = char
-		} else {
-			buf[n] = char
+			resultMap[currentMapIndex] = '='
+			currentMapIndex++
 		}
-		if encoder.lineIndex >= encoder.lineLength {
-			return n, true, nil
-		}
-		n++
+		resultMap[currentMapIndex] = resByte
+		currentMapIndex++
+
 		encoder.currentIndex++
 	}
-	copy(p, buf)
-	return n, false, nil
+
+	return resultMap, nil
 }
