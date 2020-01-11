@@ -21,6 +21,9 @@ type yEncReader struct {
 	ctx          context.Context
 }
 
+/*
+	NewyEnc creates a new yEncReader providing the ReadLine function.
+*/
 func NewyEnc(sourceString []byte, lineLength int) *yEncReader {
 	return &yEncReader{
 		sourceString: sourceString,
@@ -55,6 +58,9 @@ func yEncify(r byte) (byte, bool) {
 	return byte(temp), escape
 }
 
+/*
+	Returns the next Line of yEnc encoded content.
+*/
 func (encoder *yEncReader) ReadLine() ([]byte, error) {
 	if err := sem.Acquire(encoder.ctx, 1); err != nil {
 		return nil, err
