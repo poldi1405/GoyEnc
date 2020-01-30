@@ -1,17 +1,27 @@
 package yenc
 
+// #include <unistd.h>
+import "C"
+
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"fmt"
 	"golang.org/x/sync/semaphore"
 	"io"
+	"math"
+	"os"
+	"sync"
 )
 
 var (
 	sem = semaphore.NewWeighted(1)
+	wg  sync.WaitGroup
 )
 
 type yEncReader struct {
-	sourceString []byte
+	sourceString string
 	sourceLength int
 	currentLine  int
 	lineLength   int
@@ -19,12 +29,14 @@ type yEncReader struct {
 	currentIndex int
 	ctx          context.Context
 	legacy       bool
+	result       []*bytes.Buffer
+	EOF          bool
 }
 
 /*
 	NewyEnc creates a new yEncReader providing the ReadLine function.
 */
-func NewyEnc(sourceString []byte, lineLength int, legacy bool) *yEncReader {
+func NewyEnc(sourceString string, lineLength int, legacy bool) *yEncReader {
 	return &yEncReader{
 		sourceString: sourceString,
 		sourceLength: len(sourceString),
@@ -64,30 +76,102 @@ func yEncify(r byte, legacy bool) (byte, bool) {
 
 /*
 	Returns the next Line of yEnc encoded content.
-*/
+/
 func (encoder *yEncReader) ReadLine() ([]byte, error) {
-	if err := sem.Acquire(encoder.ctx, 1); err != nil {
-		return nil, err
-	}
+
+}*/
+
+func (encoder *yEncReader) encodeFileFragment(targetBuffer *bytes.Buffer, offset int64, sem *semaphore.Weighted) {
 	defer sem.Release(1)
+	defer wg.Done()
 
-	var currentMapIndex int
-	resultMap := make([]byte, encoder.lineLength+1)
+	fmt.Println(offset)
 
-	for currentMapIndex < encoder.lineLength {
-		if encoder.currentIndex == encoder.sourceLength {
-			return resultMap, io.EOF
-		}
-		resByte, escape := yEncify(encoder.sourceString[encoder.currentIndex], encoder.legacy)
-
-		if escape {
-			resultMap[currentMapIndex] = '='
-			currentMapIndex++
-		}
-		resultMap[currentMapIndex] = resByte
-		currentMapIndex++
-		encoder.currentIndex++
+	file, _ := os.Open(encoder.sourceString)
+	defer file.Close()
+	_, err := file.Seek(offset, 0)
+	if err != nil {
+		panic(err)
 	}
 
-	return resultMap, nil
+	r := bufio.NewReader(file)
+
+	buff := make([]byte, 4096)
+
+	// 4 * 1024 * 1024 = 4 MiB
+	for i := 0; i < 1024; i++ {
+		bte, err := r.Read(buff)
+		if err != nil {
+			if err == io.EOF {
+				//TODO: UPDATE EOF!
+				encoder.EOF = true
+				break
+			}
+			panic(err)
+		}
+
+		for _, b := range buff[0:bte] {
+
+			encoded, escape := yEncify(b, encoder.legacy)
+
+			if escape {
+				targetBuffer.WriteRune('=')
+			}
+			targetBuffer.WriteByte(encoded)
+		}
+	}
+}
+
+func (encoder *yEncReader) EncodeFile() {
+	f, err := os.Open(encoder.sourceString)
+	if err != nil {
+		panic(err)
+	}
+
+	fi, err := f.Stat()
+	if err != nil {
+		panic(err)
+	}
+
+	fragments := fi.Size() / 4194304
+	limit := getGoRoutineCount(int(math.Floor(float64(fragments)) + 1))
+
+	ctx := context.TODO()
+	sem = semaphore.NewWeighted(int64(limit))
+	counter := 0
+
+	for !encoder.EOF {
+		if err := sem.Acquire(ctx, 1); err != nil {
+			panic(err)
+		}
+
+		encoder.result = append(encoder.result, bytes.NewBuffer([]byte("")))
+
+		wg.Add(1)
+		go encoder.encodeFileFragment(encoder.result[counter], int64(counter*4194304), sem)
+		counter++
+	}
+	wg.Wait()
+}
+
+func getGoRoutineCount(fragments int) int {
+	/*
+		limits:
+			4 GiB and above: 128
+			2 GiB to 4 GiB:  64
+			under 2 GiB:     32
+			under 500 MiB:   1
+	*/
+	totalRAM := C.sysconf(C._SC_PHYS_PAGES) * C.sysconf(C._SC_PAGE_SIZE)
+
+	if totalRAM < 500*1024*1024 {
+		return 1
+	} else if totalRAM < 2*1024*1024*1024 && fragments > 32 {
+		return 32
+	} else if totalRAM < 4*1024*1024*1024 && fragments > 64 {
+		return 64
+	} else if fragments > 128 {
+		return 128
+	}
+	return fragments
 }
