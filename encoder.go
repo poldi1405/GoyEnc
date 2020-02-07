@@ -177,22 +177,25 @@ func (encoder *yEncReader) EncodeFile() {
 }
 
 func getGoRoutineCount(fragments int) int {
-	/*
-			limits:
+	totalRAM := C.sysconf(C._SC_PHYS_PAGES) * C.sysconf(C._SC_PAGE_SIZE)
+	RAMLimit := 128
+	if totalRAM < 500*1024*1024 {
+		RAMLimit = 1
+	} else if totalRAM < 2*1024*1024*1024 && fragments > 32 {
+		RAMLimit = 32
+	} else if totalRAM < 4*1024*1024*1024 && fragments > 64 {
+		RAMLimit = 64
+	} else if totalRAM < 16*1024*1024*1024 {
+		RAMLimit = 128
+	}
 
-		totalRAM := C.sysconf(C._SC_PHYS_PAGES) * C.sysconf(C._SC_PAGE_SIZE)
+	CPULimit := runtime.NumCPU() * 15
 
-		if totalRAM < 500*1024*1024 {
-			return 1
-		} else if totalRAM < 2*1024*1024*1024 && fragments > 32 {
-			return 32
-		} else if totalRAM < 4*1024*1024*1024 && fragments > 64 {
-			return 64
-		} else if fragments > 128 {
-			return 128
-		}
-		return fragments*/
-	return runtime.NumCPU() * 15
+	if RAMLimit < CPULimit {
+		return RAMLimit
+	} else {
+		return CPULimit
+	}
 }
 
 func (encoder *yEncReader) printFragment() {
