@@ -1,8 +1,9 @@
 package yenc
 
+/*// #cgo LDFLAGS: -static
 // #include <unistd.h>
 import "C"
-
+*/
 import (
 	"bufio"
 	"bytes"
@@ -12,8 +13,11 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"sync"
 )
+
+const FILEBUFFER_SIZE = 4194304
 
 var (
 	sem = semaphore.NewWeighted(1)
@@ -21,16 +25,23 @@ var (
 )
 
 type yEncReader struct {
-	sourceString string
-	sourceLength int
-	currentLine  int
-	lineLength   int
-	lineIndex    int
-	currentIndex int
-	ctx          context.Context
-	legacy       bool
-	result       []*bytes.Buffer
-	EOF          bool
+	sourceString         string
+	sourceLength         int
+	currentLine          int
+	lineLength           int
+	lineIndex            int
+	currentIndex         int
+	ctx                  context.Context
+	legacy               bool
+	result               []*bytes.Buffer
+	EOF                  bool
+	lastEncodedBuffer    int
+	PartSize             int
+	partBuffer           bytes.Buffer
+	finishedBuffers      []*bool
+	finishedBuffersMutex sync.Mutex
+	currentFragment      int
+	outputMutex          sync.Mutex
 }
 
 /*
@@ -38,11 +49,16 @@ type yEncReader struct {
 */
 func NewyEnc(sourceString string, lineLength int, legacy bool) *yEncReader {
 	return &yEncReader{
-		sourceString: sourceString,
-		sourceLength: len(sourceString),
-		lineLength:   lineLength,
-		ctx:          context.TODO(),
-		legacy:       legacy,
+		sourceString:         sourceString,
+		sourceLength:         len(sourceString),
+		lineLength:           lineLength,
+		ctx:                  context.TODO(),
+		legacy:               legacy,
+		lastEncodedBuffer:    -1,
+		PartSize:             100000,
+		currentFragment:      1,
+		outputMutex:          sync.Mutex{},
+		finishedBuffersMutex: sync.Mutex{},
 	}
 }
 
@@ -85,11 +101,11 @@ func (encoder *yEncReader) encodeFileFragment(targetBuffer *bytes.Buffer, offset
 	defer sem.Release(1)
 	defer wg.Done()
 
-	fmt.Println(offset)
+	//fmt.Println(offset)
 
 	file, _ := os.Open(encoder.sourceString)
 	defer file.Close()
-	_, err := file.Seek(offset, 0)
+	_, err := file.Seek(offset*FILEBUFFER_SIZE, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -103,7 +119,6 @@ func (encoder *yEncReader) encodeFileFragment(targetBuffer *bytes.Buffer, offset
 		bte, err := r.Read(buff)
 		if err != nil {
 			if err == io.EOF {
-				//TODO: UPDATE EOF!
 				encoder.EOF = true
 				break
 			}
@@ -120,6 +135,10 @@ func (encoder *yEncReader) encodeFileFragment(targetBuffer *bytes.Buffer, offset
 			targetBuffer.WriteByte(encoded)
 		}
 	}
+	encoder.finishedBuffersMutex.Lock()
+	*encoder.finishedBuffers[offset] = true
+	encoder.finishedBuffersMutex.Unlock()
+	go encoder.printFragment()
 }
 
 func (encoder *yEncReader) EncodeFile() {
@@ -133,7 +152,7 @@ func (encoder *yEncReader) EncodeFile() {
 		panic(err)
 	}
 
-	fragments := fi.Size() / 4194304
+	fragments := fi.Size() / FILEBUFFER_SIZE
 	limit := getGoRoutineCount(int(math.Floor(float64(fragments)) + 1))
 
 	ctx := context.TODO()
@@ -144,11 +163,14 @@ func (encoder *yEncReader) EncodeFile() {
 		if err := sem.Acquire(ctx, 1); err != nil {
 			panic(err)
 		}
-
+		newBool := false
+		encoder.finishedBuffersMutex.Lock()
+		encoder.finishedBuffers = append(encoder.finishedBuffers, &newBool)
+		encoder.finishedBuffersMutex.Unlock()
 		encoder.result = append(encoder.result, bytes.NewBuffer([]byte("")))
 
 		wg.Add(1)
-		go encoder.encodeFileFragment(encoder.result[counter], int64(counter*4194304), sem)
+		go encoder.encodeFileFragment(encoder.result[counter], int64(counter), sem)
 		counter++
 	}
 	wg.Wait()
@@ -156,22 +178,78 @@ func (encoder *yEncReader) EncodeFile() {
 
 func getGoRoutineCount(fragments int) int {
 	/*
-		limits:
-			4 GiB and above: 128
-			2 GiB to 4 GiB:  64
-			under 2 GiB:     32
-			under 500 MiB:   1
-	*/
-	totalRAM := C.sysconf(C._SC_PHYS_PAGES) * C.sysconf(C._SC_PAGE_SIZE)
+			limits:
 
-	if totalRAM < 500*1024*1024 {
-		return 1
-	} else if totalRAM < 2*1024*1024*1024 && fragments > 32 {
-		return 32
-	} else if totalRAM < 4*1024*1024*1024 && fragments > 64 {
-		return 64
-	} else if fragments > 128 {
-		return 128
+		totalRAM := C.sysconf(C._SC_PHYS_PAGES) * C.sysconf(C._SC_PAGE_SIZE)
+
+		if totalRAM < 500*1024*1024 {
+			return 1
+		} else if totalRAM < 2*1024*1024*1024 && fragments > 32 {
+			return 32
+		} else if totalRAM < 4*1024*1024*1024 && fragments > 64 {
+			return 64
+		} else if fragments > 128 {
+			return 128
+		}
+		return fragments*/
+	return runtime.NumCPU() * 15
+}
+
+func (encoder *yEncReader) printFragment() {
+	encoder.outputMutex.Lock()
+	defer encoder.outputMutex.Unlock()
+
+	curBuf := encoder.lastEncodedBuffer + 1
+	dataBuffer := make([]byte, 4096)
+	fragmentBuffer := make([]byte, encoder.PartSize)
+
+	for *encoder.finishedBuffers[curBuf] {
+		EOB := false
+		for !EOB {
+			_, err := encoder.result[curBuf].Read(dataBuffer)
+			if err == io.EOF {
+				EOB = true
+			} else if err != nil {
+				panic(err)
+			}
+			encoder.partBuffer.Write(dataBuffer)
+		}
+		encoder.result[curBuf].Reset()
+		encoder.lastEncodedBuffer++
+		curBuf++
 	}
-	return fragments
+
+	EOB := false
+	for encoder.partBuffer.Len() > encoder.PartSize || encoder.EOF {
+
+		n, err := encoder.partBuffer.Read(fragmentBuffer)
+		if err == io.EOF {
+			EOB = true
+		} else if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("=ybegin part=%d line=%d size=%d name=%s\n", encoder.currentFragment, encoder.lineLength, n, encoder.sourceString)
+		startIndex := 0
+
+		for true {
+			endIndex := startIndex + encoder.lineLength
+			if endIndex >= len(fragmentBuffer) {
+				endIndex = n - 1
+			}
+			if fragmentBuffer[endIndex] == byte(61) {
+				endIndex++
+			}
+
+			fmt.Println(string(fragmentBuffer[startIndex:endIndex]))
+			startIndex = endIndex + 1
+			if startIndex >= n {
+				break
+			}
+		}
+
+		if encoder.EOF && EOB {
+			break
+		}
+	}
 }
