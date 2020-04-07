@@ -3,36 +3,37 @@ package yenc
 import (
 	//"fmt"
 	"context"
+	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
 	"io"
+	"os"
 )
 
-var (
-	sem = semaphore.NewWeighted(1)
-)
+type yEncer struct {
+	resultSet           []chan []byte
+	intermediateResults [][]chan []byte
+	finishedResult      []bool
+	chunkSize           int64
+	experimental        bool // use yEnc 1.3
+	lineLength          int
 
-type yEncReader struct {
-	sourceString []byte
-	sourceLength int
-	currentLine  int
-	lineLength   int
-	lineIndex    int
-	currentIndex int
-	ctx          context.Context
+	ctx       []context.Context
+	ctxCancel []context.CancelFunc
 }
 
-func NewyEnc(sourceString []byte, lineLength int) *yEncReader {
-	return &yEncReader{
-		sourceString: sourceString,
-		sourceLength: len(sourceString),
+func NewyEnc() yEncer {
+	return yEncer{}
+}
+
+func NewCustomyEnc(lineLength int, FileChunkSize int64, use13 bool) yEncer {
+	return yEncer{
+		chunkSize:    FileChunkSize,
+		experimental: use13,
 		lineLength:   lineLength,
-		ctx:          context.TODO(),
 	}
 }
 
-// TODO: implement file-reader returning yEnc instead of default bytes
-
-func yEncify(r byte) (byte, bool) {
+func (y yEncer) yEncify(r byte) (byte, bool) {
 	escape := false
 	temp := int(r)
 
@@ -40,7 +41,7 @@ func yEncify(r byte) (byte, bool) {
 	temp += 42
 
 	// % 256d
-	temp &= 255
+	temp %= 256
 
 	// if 00h 0Ah 0Dh or 3Dh
 	if temp == 0 || temp == 10 || temp == 13 || temp == 61 {
@@ -48,37 +49,17 @@ func yEncify(r byte) (byte, bool) {
 		temp += 64
 
 		// % 256d
-		temp &= 255
+		temp %= 256
 		escape = true
 	}
 
 	return byte(temp), escape
 }
 
-func (encoder *yEncReader) ReadLine() ([]byte, error) {
-	if err := sem.Acquire(encoder.ctx, 1); err != nil {
-		return nil, err
+func (y yEncer) CancelEncoding(JobId int) error {
+	if len(y.ctx) <= JobId {
+		return errors.New("yEnc: JobID not assigned")
+	} else {
+		y.ctxCancel[JobId]()
 	}
-	defer sem.Release(1)
-
-	var currentMapIndex int
-	resultMap := make([]byte, encoder.lineLength+1)
-
-	for currentMapIndex < encoder.lineLength {
-		if encoder.currentIndex == encoder.sourceLength {
-			return resultMap, io.EOF
-		}
-		resByte, escape := yEncify(encoder.sourceString[encoder.currentIndex])
-
-		if escape {
-			resultMap[currentMapIndex] = '='
-			currentMapIndex++
-		}
-		resultMap[currentMapIndex] = resByte
-		currentMapIndex++
-
-		encoder.currentIndex++
-	}
-
-	return resultMap, nil
 }
