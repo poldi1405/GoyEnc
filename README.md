@@ -7,9 +7,9 @@ yEnc Encoder according to [the official specification](http://www.yenc.org/yenc-
 
 ## ToDo
 
-- [ ] Make it not kill your CPU and eat your RAM
-  - [ ] enable configuration of number of goroutines
-- [ ] add tests
-- [ ] verify implementation
-- [ ] add Documentation
-- [ ] improve RAM & CPU Usage
+	- [ ] Make it not kill your CPU and eat your RAM
+		- [ ] enable configuration of number of goroutines
+	- [ ] add tests
+	- [ ] verify implementation
+	- [ ] add Documentation
+	- [ ] improve RAM & CPU Usage
