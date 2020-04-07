@@ -1,25 +1,26 @@
 package yenc
 
 import (
+	"context"
 	"golang.org/x/sync/semaphore"
 	"io"
 	"os"
 )
 
-func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) error {
+func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) (int, error) {
 	defer close(ResultChannel)
 
 	// Open File
 	encFile, err := os.Open(FilePath)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	defer encFile.Close()
 
 	// Get the file's size
 	encFileInfo, err := encFile.Stat()
 	if err != nil {
-		return err
+		return -1, err
 	}
 	filesize := encFileInfo.Size()
 
@@ -29,11 +30,11 @@ func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) error {
 		chunks++
 	}
 
-	workId := len(y.ctx) - 1
+	workId := len(y.ctx)
 	worker := getLimit(chunks, y.chunkSize)
 	workContext, cancel := context.WithCancel(context.Background())
-	y.ctx[workId] = workContext
-	y.ctxCancel[workId] = cancel
+	y.ctx = append(y.ctx, workContext)
+	y.ctxCancel = append(y.ctxCancel, cancel)
 	encsem := semaphore.NewWeighted(worker)
 
 	enc := func(ctx context.Context, fragment []byte) <-chan []byte {
@@ -63,14 +64,14 @@ func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) error {
 		err = encsem.Acquire(workContext, 1)
 		if err != nil {
 			cancel()
-			return err
+			return -1, err
 		}
 		chunk := make([]byte, y.chunkSize)
 
 		_, err = encFile.ReadAt(chunk, i*y.chunkSize)
 		if err != nil && err != io.EOF {
 			cancel()
-			return err
+			return -1, err
 		}
 
 		enc(workContext, chunk)
@@ -78,6 +79,7 @@ func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) error {
 		//TODO: make joiner cancellable (is that a word?)
 	}
 
+	return workId, nil
 }
 
 func (y yEncer) EncodeBytes(fragment []byte) []byte {
