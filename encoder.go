@@ -1,9 +1,9 @@
 package yenc
 
 import (
-	//"fmt"
+	"bufio"
+	"bytes"
 	"context"
-	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
 	"io"
 	"os"
