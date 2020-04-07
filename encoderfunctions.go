@@ -30,7 +30,7 @@ func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) (int, err
 		chunks++
 	}
 
-	workId := len(y.ctx)
+	workID := len(y.ctx)
 	worker := getLimit(chunks, y.chunkSize)
 	workContext, cancel := context.WithCancel(context.Background())
 	y.ctx = append(y.ctx, workContext)
@@ -79,7 +79,7 @@ func (y yEncer) EncodeFile(FilePath string, ResultChannel chan []byte) (int, err
 		//TODO: make joiner cancellable (is that a word?)
 	}
 
-	return workId, nil
+	return workID, nil
 }
 
 func (y yEncer) EncodeBytes(fragment []byte) []byte {

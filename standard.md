@@ -13,13 +13,13 @@ such Characters are to be encoded using:
 critical := (encoded + 64) % 256
 
 Critical Characters (1.3)
-- 0x0   NULL
-- 0xA   LF
-- 0xD   CR
-- 0x3D  =
+	- 0x0   NULL
+	- 0xA   LF
+	- 0xD   CR
+	- 0x3D  =
 
 additionally for 1.2:
-- 0x9   TAB
+	- 0x9   TAB
 
 > Careful writers of encoders will encode TAB (09h) SPACES (20h) 
 > if they would appear in the first or last column of a line.
@@ -45,20 +45,20 @@ same line leading to a total line-lenth of n+1
 > yEnc. In such cases the decoder should assume that there is no binary. 
 
 Must contain:
-- typical line length (might be +1 if critical character is present) (header)
-- size of the unencoded file
-- name of the fragmented file (header)
+	- typical line length (might be +1 if critical character is present) (header)
+	- size of the unencoded file
+	- name of the fragmented file (header)
 
 Can contain:
-- crc32 Checksum (trailer)
+	- crc32 Checksum (trailer)
 
 Notes:
-- the filename must be the last item on the header line
-- leading and trailing spaces will be cut 
-- filenames may contain non-US-ASCII-characters, control characters, and characters
+	- the filename must be the last item on the header line
+	- leading and trailing spaces will be cut 
+	- filenames may contain non-US-ASCII-characters, control characters, and characters
    not supported by the current platform
-- the filename may be up to 256 characters long
-- the sizes of the header, trailer, and decoded binary have to be verified. if any one
+	- the filename may be up to 256 characters long
+	- the sizes of the header, trailer, and decoded binary have to be verified. if any one
    of them differs the fragment needs to be considered corrupt and a warning must be
    issued, the binary must be discarded (discarding is to be handled by clients using this
    library)

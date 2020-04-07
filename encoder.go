@@ -1,12 +1,8 @@
 package yenc
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"golang.org/x/sync/semaphore"
-	"io"
-	"os"
+	"errors"
 )
 
 type yEncer struct {
@@ -21,10 +17,15 @@ type yEncer struct {
 	ctxCancel []context.CancelFunc
 }
 
+// Returns a default yEncer that is ready to be used
 func NewyEnc() yEncer {
-	return yEncer{}
+	return yEncer{
+		chunkSize:  4194304,
+		lineLength: 256,
+	}
 }
 
+// Returns a yEncer that can be configured
 func NewCustomyEnc(lineLength int, FileChunkSize int64, use13 bool) yEncer {
 	return yEncer{
 		chunkSize:    FileChunkSize,
@@ -56,10 +57,12 @@ func (y yEncer) yEncify(r byte) (byte, bool) {
 	return byte(temp), escape
 }
 
+// Allows the cancellation of an encoding job.
 func (y yEncer) CancelEncoding(JobId int) error {
 	if len(y.ctx) <= JobId {
 		return errors.New("yEnc: JobID not assigned")
-	} else {
-		y.ctxCancel[JobId]()
 	}
+
+	y.ctxCancel[JobId]()
+	return nil
 }
